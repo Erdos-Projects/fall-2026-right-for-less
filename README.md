@@ -15,26 +15,7 @@ This is an empirical study of established routing methods.
 - [TF-IDF Step 1 handoff](1_data_preparation/TF_IDF_ROUTER_HANDOFF.md): What the notebook prepared and how to use its saved data for router Steps 2 through 7.
 
 ## Python setup and data preparation
-
-From the repository root, create a Python 3.12 virtual environment and install
-the dependencies:
-
-```sh
-/opt/homebrew/bin/python3.12 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-```
-
-Run the data preparation entry point with the configuration in the repository root:
-
-```sh
-python 1_data_preparation/prepare_step1.py --config config.json
-```
-
-This downloads the pinned RouterBench dataset and writes outputs under
-`1_data_preparation/`. `routing_data.py` contains helper functions; running it
-directly does not prepare the dataset. Use the activated environment's `python`
-or `.venv/bin/python`, since `/opt/homebrew/bin/python3.12` bypasses the environment.
+Install python. 
 
 ## Dataset and model pool
 
