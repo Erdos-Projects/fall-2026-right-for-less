@@ -39,24 +39,6 @@ python -c "import sys; print(sys.executable)"
 
 The printed path should end with `.venv-e5-clean/bin/python`.
 
-## 3. Keep the environment out of Git
-
-Create a file named `.gitignore` in the project's main folder if one does not already exist. Add this line and save it, preserving any existing entries:
-
-```gitignore
-.venv-e5-clean/
-```
-
-Commit the `.gitignore` file with the project. Other users should create their own environment rather than copy or commit this folder.
-
-If the environment folder was already staged or tracked, run:
-
-```bash
-git rm -r --cached -- .venv-e5-clean
-```
-
-This removes the folder from Git tracking while keeping it on your computer. If Git reports that the path did not match any files, the folder was not tracked; no removal is needed.
-
 ## 4. Install and test PyTorch
 
 With the environment activated, run:

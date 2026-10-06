@@ -11,9 +11,6 @@ This is an empirical study of established routing methods.
 
 # Start here
 
-- [KPI definitions](kpis.md): Key performance indicators
-- [TF-IDF Step 1 handoff](1_data_preparation/TF_IDF_ROUTER_HANDOFF.md): What the notebook prepared and how to use its saved data for router Steps 2 through 7.
-
 ## Python setup and data preparation
 Install python. 
 
