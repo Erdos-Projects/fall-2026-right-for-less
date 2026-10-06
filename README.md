@@ -1,4 +1,4 @@
-# Erdos-Router
+# The Right answer, for Less
 
 Different language models (LLMs) offer different tradeoffs between performance and cost, so choosing the right model for each problem can significantly improve efficiency. Given a problem set, instead of always using the LLM with the best performance with a high cost, we want to devise a router that will automatically recommend the least expensive LLM while still maintaining a high accuracy on each problem. We hope this router can benefit both Companies and individuals.
 
