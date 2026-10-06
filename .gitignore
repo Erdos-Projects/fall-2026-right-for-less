@@ -1,0 +1,18 @@
+# Python environments
+.venv/
+.venv-e5-clean/
+venv/
+env/
+
+# Data folders anywhere in the project
+data/
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# macOS files
+.DS_Store
