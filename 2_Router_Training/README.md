@@ -227,7 +227,7 @@ $$
 `Defined_score_WAPE_models` and `Defined_cost_WAPE_models` apply this count to scores and costs respectively. Both counts are **11** throughout the reference results. For a run with undefined columns, the mean is:
 
 $$
-D_y=\left\{m:\sum_i|y_{im}|>0\right\},\qquad
+D_y=\left\lbrace m:\sum_i|y_{im}|>0\right\rbrace,\qquad
 \overline{\mathrm{WAPE}}=
 \frac{1}{|D_y|}\sum_{m\in D_y}\mathrm{WAPE}_m.
 $$
