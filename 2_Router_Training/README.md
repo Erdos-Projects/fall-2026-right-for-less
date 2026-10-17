@@ -4,7 +4,7 @@
 
 This table compares the current workflow with the [GitHub version](https://github.com/Erdos-Projects/fall-2026-right-for-less/blob/febc7b0ecde5ee95634cae9b50d96cb330d0d707/2_Router_Training/README.md). CV means cross-validation.
 
-| Area | GitHub version | Current version |
+| Area | Previous version | Current version |
 |---|---|---|
 | Predictor evaluation | Uses validation | Uses calibration; validation is reserved for routing policies |
 | Logistic | Training CV tests 3 C values | Expands the existing search to 7 C values, from 0.01 to 10000 |
