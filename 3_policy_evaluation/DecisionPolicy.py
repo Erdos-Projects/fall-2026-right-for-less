@@ -116,7 +116,7 @@ class DecisionPolicy:
     # Vectorized evaluation across multiple lambdas
     # --------------------------------------------------
 
-    def evaluate_lambdas(self, l_values, batch_size=None):
+    def evaluate_lambdas(self, l_values, batch_size=20):
         l_values = np.atleast_1d(
             np.asarray(l_values, dtype=float)
         )
@@ -170,7 +170,7 @@ class DecisionPolicy:
             "cost": costs
         }).set_index("lambda")
 
-    def select_lambda_from_threshold(self, l_values, threshold, batch_size=None):
+    def select_lambda_from_threshold(self, l_values, threshold, batch_size=20):
         """
             return the lambda corresponding to the cheapest policy that attains 
             the minimum performance threshold.
