@@ -170,6 +170,14 @@ class DecisionPolicy:
             "cost": costs
         }).set_index("lambda")
 
+    def select_lambda_from_threshold(self, l_values, threshold, batch_size=None):
+        """
+            return the lambda corresponding to the cheapest policy that attains 
+            the minimum performance threshold.
+        """
+        results = self.evaluate_lambdas(l_values, batch_size)
+        return results[results["performance"] >= threshold]["cost"].idxmin()
+
     # --------------------------------------------------
     # Compute statistics
     # --------------------------------------------------
