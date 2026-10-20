@@ -176,7 +176,12 @@ class DecisionPolicy:
             the minimum performance threshold.
         """
         results = self.evaluate_lambdas(l_values, batch_size)
-        return results[results["performance"] >= threshold]["cost"].idxmin()
+        filtered_results = results[results["performance"] >= threshold]
+        if len(filtered_results) == 0:
+            print("Minimum threshold was not achieved in the data. Returning `None`.")
+            return None
+        else:
+            return filtered_results["cost"].idxmin()
 
     # --------------------------------------------------
     # Compute statistics
