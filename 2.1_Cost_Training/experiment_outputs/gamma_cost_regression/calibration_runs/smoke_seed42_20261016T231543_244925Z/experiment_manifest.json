@@ -1,0 +1,58 @@
+{
+  "run_mode": "smoke",
+  "seed": 42,
+  "model_names": [
+    "WizardLM/WizardLM-13B-V1.2",
+    "claude-instant-v1",
+    "claude-v1",
+    "claude-v2",
+    "gpt-3.5-turbo-1106",
+    "gpt-4-1106-preview",
+    "meta/code-llama-instruct-34b-chat",
+    "meta/llama-2-70b-chat",
+    "mistralai/mistral-7b-chat",
+    "mistralai/mixtral-8x7b-chat",
+    "zero-one-ai/Yi-34B-Chat"
+  ],
+  "features": {
+    "tfidf": "Pure character TF-IDF",
+    "e5_388": "E5 + four features"
+  },
+  "gamma_alpha": {
+    "tfidf": 0.001,
+    "e5_388": 0.001
+  },
+  "gamma_alpha_grid": [
+    0.001,
+    0.01,
+    0.1,
+    1.0
+  ],
+  "gamma_cv_folds": 3,
+  "gamma_cv_selection_metric": "mean per-LLM out-of-fold WAPE",
+  "ridge_alpha": {
+    "tfidf": 10.0,
+    "e5_388": 1.0
+  },
+  "cost_means": [
+    7.4112890625e-05,
+    0.00023807343749999998,
+    0.002164640625,
+    0.002412984375,
+    0.000245681640625,
+    0.0032578125000000003,
+    0.00017368607812500003,
+    0.000203776171875,
+    4.5239843749999995e-05,
+    0.00013509140625,
+    0.0001846640625
+  ],
+  "prepared_data_directory": "/Users/haotanhan/Documents/Career/DataScience/ErdosBootCamp/Project/fall-2026-right-for-less/fall-2026-right-for-less/1_data_preparation",
+  "sklearn_version": "1.9.1",
+  "metrics": "Unweighted mean across 11 per-LLM metrics; WAPE expressed as a percentage",
+  "test_evaluated": false,
+  "metrics_evaluation_split": "calibration",
+  "routing_validation_labels_used": false,
+  "gamma_alpha_tuned": true,
+  "gamma_alpha_tuned_on": "train (grouped CV)"
+}

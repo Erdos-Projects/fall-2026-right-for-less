@@ -1,0 +1,49 @@
+{
+  "run_mode": "full",
+  "seed": 42,
+  "model_names": [
+    "WizardLM/WizardLM-13B-V1.2",
+    "claude-instant-v1",
+    "claude-v1",
+    "claude-v2",
+    "gpt-3.5-turbo-1106",
+    "gpt-4-1106-preview",
+    "meta/code-llama-instruct-34b-chat",
+    "meta/llama-2-70b-chat",
+    "mistralai/mistral-7b-chat",
+    "mistralai/mixtral-8x7b-chat",
+    "zero-one-ai/Yi-34B-Chat"
+  ],
+  "features": {
+    "tfidf": "Pure character TF-IDF",
+    "e5_388": "E5 + four features"
+  },
+  "gamma_alpha": {
+    "tfidf": 1.0,
+    "e5_388": 1.0
+  },
+  "ridge_alpha": {
+    "tfidf": 10.0,
+    "e5_388": 1.0
+  },
+  "cost_means": [
+    7.286150684931506e-05,
+    0.00023322831050228313,
+    0.00214385899543379,
+    0.0024203817351598172,
+    0.00024298018264840184,
+    0.003298159360730594,
+    0.0001719334301369863,
+    0.0002024713561643836,
+    4.564689497716895e-05,
+    0.00013452205479452055,
+    0.00018563890410958908
+  ],
+  "prepared_data_directory": "/Users/haotanhan/Documents/Career/DataScience/ErdosBootCamp/Project/fall-2026-right-for-less/fall-2026-right-for-less/1_data_preparation",
+  "sklearn_version": "1.9.1",
+  "metrics": "Unweighted mean across 11 per-LLM metrics; WAPE expressed as a percentage",
+  "test_evaluated": false,
+  "metrics_evaluation_split": "calibration",
+  "routing_validation_labels_used": false,
+  "gamma_alpha_tuned": false
+}
