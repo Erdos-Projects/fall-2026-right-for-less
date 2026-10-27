@@ -189,8 +189,8 @@ class DecisionPolicy:
 
     def show_statistics(self):
         print(f'===========Statistics for l={self.l}===========\n')
-        print('Number of times each model was selected:')
-        display(self.selected_models["best_model"].value_counts())
+        print('How often each model is selected:')
+        display((100 * self.selected_models["best_model"].value_counts(normalize=True)).map('{:.2f}%'.format))
         print('===========================================')
         print(f'Performance: {self.policy_performance:.6f}')
         print(f'Cost: ${self.policy_cost:.6f}')
