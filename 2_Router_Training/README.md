@@ -1,21 +1,18 @@
 # Step 2: Five-Class Score and Cost Prediction
 
-## Changes from the GitHub Version
+## Changes from the Previous Version
 
-This table compares the current workflow with the [GitHub version](https://github.com/Erdos-Projects/fall-2026-right-for-less/blob/febc7b0ecde5ee95634cae9b50d96cb330d0d707/2_Router_Training/README.md). CV means cross-validation.
+Compared with the [previous version (2026-10-17)](https://github.com/Erdos-Projects/fall-2026-right-for-less/blob/0e9cacbdfb3d5f82e176ae42010bb509342ca799/2_Router_Training/README.md), before the LogNormal/Gamma extension, there are three main experimental changes. CV means cross-validation.
 
 | Area | Previous version | Current version |
 |---|---|---|
-| Predictor evaluation | Uses validation | Uses calibration; validation is reserved for routing policies |
-| Logistic | Training CV tests 3 C values | Expands the existing search to 7 C values, from 0.01 to 10000 |
-| Ridge costs | Uses fixed penalties | Adds three-fold training CV to choose the penalty |
-| kNN | Uses 40 neighbors; explores alternatives on validation | Training CV selects separately: **80 neighbors for scores** with both inputs; **5 for TF-IDF costs** and **10 for E5 costs**. |
-| Score errors | Includes relative error | Uses absolute and squared errors; relative error remains for costs |
-| Full-run output | New timestamped folder each run | Fixed `full/` folder, overwritten on each full run |
+| Logistic CV diagnostics | Records NLL and class accuracy | Adds hard- and expected-score MSE/MAE for each C; NLL still selects C |
+| LogNormal costs | Not included | Adds log-cost Ridge with training-only smearing and grouped training CV for alpha |
+| Gamma costs | Not included | Adds Gamma regression with a log link and grouped training CV for alpha |
 
-The old validation results and new calibration results are not directly comparable.
+The two added cost families are included in the final calibration comparison and saved prediction outputs.
 
-This folder contains [TF-IDF_E5_Score_Classification_Router.ipynb](TF-IDF_E5_Score_Classification_Router.ipynb). It compares three prediction methods using pure character TF-IDF and frozen E5 embeddings with four additional features.
+This folder contains [TF-IDF_E5_Score_Classification_Router.ipynb](TF-IDF_E5_Score_Classification_Router.ipynb). It compares three score classifiers and five cost predictors using pure character TF-IDF and frozen E5 embeddings with four additional features.
 
 For each question, the notebook predicts a score distribution and a dollar cost for **11 candidate LLMs**, using recorded RouterBench outcomes. You do not need to download these LLMs or call their APIs.
 
@@ -49,10 +46,10 @@ The [E5 environment guide](../1_data_preparation/README-e5.md) provides macOS se
 
 Open the training notebook in VS Code or Jupyter. In VS Code, select the Python environment at the top right of the notebook. Reuse the environment used for data preparation when possible.
 
-Step 2 requires NumPy, pandas, SciPy, **scikit-learn >= 1.6**, **XGBoost >= 2.0**, joblib, IPython and Jinja2. If the preparation environment already contains the other packages, install the additional dependencies from a terminal using that environment:
+Step 2 requires NumPy, pandas, SciPy, **scikit-learn >= 1.6**, **XGBoost >= 2.0**, joblib, threadpoolctl, matplotlib, IPython and Jinja2. If the preparation environment already contains the other packages, install the additional dependencies from a terminal using that environment:
 
 ```bash
-python -m pip install "xgboost>=2.0" jinja2
+python -m pip install "xgboost>=2.0" jinja2 matplotlib threadpoolctl
 ```
 
 Keep package versions compatible with the saved preprocessing objects.
@@ -107,13 +104,13 @@ Select **Restart Kernel**, then **Run All**. The default configuration uses all 
 RUN_MODE = "full"
 ```
 
-A complete run repeats the grouped training-CV searches for Logistic C, Ridge alpha and the two kNN neighbor counts, then fits the selected Logistic/Ridge models, rebuilds kNN indices and fits XGBoost for both representations. XGBoost uses 100 boosting rounds in full mode. The prepared TF-IDF and frozen E5 features from Step 1 are reused.
+A complete run repeats training CV for Logistic C, Ridge alpha and the two kNN neighbor counts, fits the selected predictors and XGBoost, then runs LogNormal and Gamma cost experiments. Each additional cost family searches alpha once per representation. LogNormal E5 uses the requested final-fit alpha of 0; its CV selection remains recorded separately. XGBoost uses 100 boosting rounds in full mode. Prepared TF-IDF and frozen E5 features are reused.
 
-**Full results use the fixed `full/` folder.** The first run creates it. On later runs, the configuration cell clears and recreates it before training, provided its `run_status.json` identifies it as this notebook's output. An unrecognized directory is not deleted; the notebook stops instead. Copy results you want to keep before starting another full run. Existing timestamped result folders remain unchanged.
+**Full results use the fixed `full/` folder.** A rerun overwrites the same generated filenames and preserves `archive_before_*/` folders. Ownership checks guard existing outputs. Use the current manifests to identify this run's files; unrelated or obsolete files are not listed as new results. Archive any active results you want to keep before another full run.
 
 For an initial execution check, set `RUN_MODE = "smoke"`, restart the kernel and run all cells. Smoke uses a small subset and 10 XGBoost rounds, writes a separate timestamped folder, and leaves `full/` unchanged. To train the complete experiment afterward, switch back to `"full"`, restart the kernel and run all cells again. Smoke metrics are only an execution check.
 
-The notebook prints **Prepared data** and **Outputs**, checks alignment and stops if a Logistic CV or final head fails to converge. A completed run has `status == "completed"` in `run_status.json`. A failed or interrupted run may contain intermediate files but is not complete; the next full start resets its recognized output folder automatically.
+The notebook prints **Prepared data** and **Outputs**, checks alignment and stops if a Logistic CV or final head fails to converge. A completed run has `status == "completed"` in `run_status.json`. A failed or interrupted run may contain intermediate files. Completion is recorded only after all predictors, exports and final comparisons pass the notebook's checks.
 
 Training defaults to CPU; a GPU is optional for XGBoost.
 
@@ -121,26 +118,28 @@ Training defaults to CPU; a GPU is optional for XGBoost.
 
 For a walkthrough, follow the sections in this order: prediction targets, evaluation metrics, input representations, prediction methods, and predictor results on calibration data. Metrics are defined before they are used for model selection.
 
-The experiment compares **three prediction methods with two input representations**, giving six main configurations. Each configuration predicts a separate score distribution and dollar cost for every candidate LLM. Hard and expected scores are two summaries of the same distribution.
+The experiment has **three score classifiers** and **five cost predictors**, each with two representations: six score configurations and ten cost configurations. The three original pipelines export score/cost bundles. LogNormal and Gamma add cost predictions that can be paired with any existing score head. Hard and expected scores summarize the same class distribution.
 
 | Method | Score prediction | Cost prediction |
 |---|---|---|
 | L2 logistic | Linear logits, softmax probabilities and L2-regularized cross-entropy | Linear Ridge model on normalized costs |
 | kNN | Uniform class frequencies among cosine neighbors | Mean recorded neighbor cost |
 | XGBoost | Boosted-tree logits and multiclass cross-entropy | Separate boosted trees with squared-error loss |
+| LogNormal | Reuse an existing score head | Ridge on log cost, exponentiation and training-only smearing |
+| Gamma | Reuse an existing score head | L2-regularized Gamma mean with a log link |
 
 ### Split roles
 
 | Split | Role in the revised workflow |
 |---|---|
-| **Train** | Fit preprocessing and predictors; choose logistic C, Ridge alpha, and separate kNN score/cost neighbor counts through grouped cross-validation within training |
+| **Train** | Fit preprocessing and predictors; choose Logistic C, Ridge/LogNormal/Gamma alpha and separate kNN score/cost neighbor counts through grouped training CV |
 | **Calibration** | Compare the selected base predictors and inspect prediction errors |
 | **Validation** | Develop and assess downstream routing policies after fixing the base predictors |
 | **Test** | Final assessment of the selected complete routing system |
 
-Here, calibration names the development split used for predictor comparisons and diagnostics. No probability calibrator is fitted. Earlier validation inspections influenced development; the revised workflow cannot undo those inspections.
+Calibration is the development split for predictor comparisons and diagnostics; no probability calibrator is fitted. Earlier work, including the supplied cost notebooks, inspected validation and test outcomes. This run excludes test from fitting and evaluation; those earlier inspections remain part of the experimental history.
 
-**About the numerical tables:** The CV and calibration numbers below come from the completed full run on 2026-10-17. It took approximately 73 minutes on this computer. The results and selected settings are recorded in `full/experiment_manifest.json` and its CSVs. A later notebook run recomputes the experiment; update these tables when replacing its results.
+**About the numerical tables:** CV results and unchanged predictor results come from completed full run `20261028T010931_284078Z` (2026-10-27 local / 2026-10-28 UTC). LogNormal E5 calibration results use a targeted alpha-0 refit completed **2026-10-28 at 02:15 PDT**, which took **56 s**. Only its final fit, training-only smearing and dependent outputs were recomputed; the original CV results were preserved. For the original complete run, smoke took **4 min 19 s** and full training and checks took **2 h 24 min 51 s**, including **42 min 27 s for LogNormal** and **25 min 51 s for Gamma**. Settings and results are recorded in `full/experiment_manifest.json` and its CSVs.
 
 ## Prediction Targets and Shared Notation
 
@@ -439,37 +438,50 @@ $$
 \log\max\left(p^{(-f,C)}_{m,z_{im}}(x_i),\epsilon\right).
 $$
 
-This averages equally over LLMs and held-out questions; fold means are weighted by fold size. Choose the lowest value, favoring smaller C on an exact tie, then refit all 11 score classifiers on the full training split. The recorded three-fold CV results are:
+This averages equally over LLMs and held-out questions; fold means are weighted by fold size. Choose the lowest value, favoring smaller C on an exact tie, then refit all 11 score classifiers on the full training split. The recorded three-fold CV results are below. Hard and expected MSE/MAE use the original recorded scores and average equally over the 11 LLMs; both outputs come from the same held-out class probabilities.
 
 **TF-IDF**
 
-| C | CV NLL | CV accuracy | Unconverged heads | Convergence warnings | Maximum iterations |
-|---|---|---|---|---|---|
-| 0.01 | 0.79056 | 66.30% | 0 | 0 | 17 |
-| 0.1 | 0.67271 | 67.92% | 0 | 0 | 31 |
-| 1 | **0.64416** | 68.18% | 0 | 0 | 71 |
-| 10 | 0.74019 | 65.80% | 0 | 0 | 120 |
-| 100 | 1.05925 | 63.77% | 0 | 0 | 139 |
-| 1000 | 1.46015 | 63.47% | 0 | 0 | 143 |
-| 10000 | 1.53591 | 63.26% | 0 | 0 | 138 |
+| C | CV NLL | CV accuracy | Hard MSE | Hard MAE | Expected MSE | Expected MAE |
+|---|---|---|---|---|---|---|
+| 0.01 | 0.79056 | 66.30% | 0.26127 | 0.28215 | 0.16657 | 0.36172 |
+| 0.1 | 0.67271 | 67.92% | 0.24562 | 0.26628 | 0.15657 | 0.34110 |
+| 1 | **0.64416** | 68.18% | 0.24623 | 0.26588 | 0.15732 | 0.32625 |
+| 10 | 0.74019 | 65.80% | 0.26722 | 0.28753 | 0.18119 | 0.31767 |
+| 100 | 1.05925 | 63.77% | 0.28137 | 0.30301 | 0.21546 | 0.31492 |
+| 1000 | 1.46015 | 63.47% | 0.28264 | 0.30464 | 0.23133 | 0.31370 |
+| 10000 | 1.53591 | 63.26% | 0.28372 | 0.30601 | 0.23321 | 0.31388 |
 
 **E5 + features**
 
-| C | CV NLL | CV accuracy | Unconverged heads | Convergence warnings | Maximum iterations |
-|---|---|---|---|---|---|
-| 0.01 | 0.70581 | 65.91% | 0 | 0 | 28 |
-| 0.1 | 0.66615 | 67.64% | 0 | 0 | 47 |
-| 1 | **0.64187** | 68.40% | 0 | 0 | 91 |
-| 10 | 0.64269 | 68.07% | 0 | 0 | 128 |
-| 100 | 0.64623 | 67.88% | 0 | 0 | 158 |
-| 1000 | 0.64743 | 67.85% | 0 | 0 | 178 |
-| 10000 | 0.64674 | 67.84% | 0 | 0 | 152 |
+| C | CV NLL | CV accuracy | Hard MSE | Hard MAE | Expected MSE | Expected MAE |
+|---|---|---|---|---|---|---|
+| 0.01 | 0.70581 | 65.91% | 0.26202 | 0.28354 | 0.16681 | 0.36007 |
+| 0.1 | 0.66615 | 67.64% | 0.24676 | 0.26767 | 0.15866 | 0.34455 |
+| 1 | **0.64187** | 68.40% | 0.24355 | 0.26333 | 0.15622 | 0.33221 |
+| 10 | 0.64269 | 68.07% | 0.24747 | 0.26708 | 0.15821 | 0.32791 |
+| 100 | 0.64623 | 67.88% | 0.24920 | 0.26885 | 0.15957 | 0.32660 |
+| 1000 | 0.64743 | 67.85% | 0.24938 | 0.26905 | 0.15990 | 0.32688 |
+| 10000 | 0.64674 | 67.84% | 0.24970 | 0.26933 | 0.15980 | 0.32683 |
 
-The lowest recorded CV NLL occurs at **C = 1 for both representations**. The implementation selects by the lowest CV NLL; any displayed CV accuracy is an auxiliary diagnostic and does not select C. Bold NLL marks the selected candidate.
+The lowest recorded CV NLL occurs at **C = 1 for both representations**. Bold NLL marks the implemented selection. Accuracy and numerical errors are auxiliary diagnostics.
 
-All **462 CV heads** and **22 final score heads** converged in the reported results, with **0 convergence warnings**. Warning counts include optimization attempts; an earlier warning can be followed by a successful retry. The unconverged count concerns the final outcome of each fit. Maximum iterations is the largest cumulative iteration count across continuation attempts for one head among that candidate's folds and LLMs; it can exceed an individual attempt's iteration limit.
+For comparison, choosing C by another metric from the same saved CV results would give:
 
-Optimization uses `lbfgs`, tolerance `1e-3`, initially 300 iterations, and continuation retries with limits of 1,000 and 2,000. Each candidate C starts a separate fit; a retry continues that same fit. The seven-C search fits **462 CV heads**, followed by **22 final score heads**. Per-head CV records are saved in `linear_cv_heads.csv`, with final per-LLM diagnostics in `linear_final_fit.csv`. No class or sample weighting is applied.
+| Selection criterion | TF-IDF best C | E5 best C |
+|---|---|---|
+| NLL minimum (implemented) | 1 | 1 |
+| Hard-class accuracy maximum | 1 | 1 |
+| Hard-score MSE minimum | 0.1 | 1 |
+| Expected-score MSE minimum | 0.1 | 1 |
+| Hard-score MAE minimum | 1 | 1 |
+| Expected-score MAE minimum | 1000 | 100 |
+
+These alternative criteria do not change the fitted models: hard and expected outputs both use the NLL-selected C = 1. Expected-score MSE would instead select C = 0.1 for TF-IDF and C = 1 for E5. C is inverse regularization strength, so smaller C means stronger L2 regularization.
+
+All **462 CV heads** and **22 final score heads** converged in the reported results, with **0 convergence warnings**. Warning counts include optimization attempts; an earlier warning can be followed by a successful retry. The unconverged count concerns the final outcome of each fit.
+
+Optimization uses `lbfgs`, tolerance `1e-3`, initially 300 iterations, and continuation retries with limits of 1,000 and 2,000. Each candidate C starts a separate fit; a retry continues that same fit. The seven-C search fits **462 CV heads**, followed by **22 final score heads**. CV records also include hard- and expected-score MSE/MAE against original scores; both outputs share the C selected by NLL. Per-head records are in `linear_cv_heads.csv`, with final diagnostics in `linear_final_fit.csv`. No class or sample weighting is applied.
 
 #### Ridge cost predictor
 
@@ -501,10 +513,10 @@ The table reports training cross-validation errors in dollars. MSE and MAE are c
 | TF-IDF | 100 | 21.130% | $0.00019832 | 4.885e-07 |
 | TF-IDF | 1000 | 37.441% | $0.00034136 | 8.347e-07 |
 | TF-IDF | 10000 | 56.701% | $0.00053619 | 1.566e-06 |
-| E5 + features | 0.01 | 14.872% | $0.00016264 | 3.122e-07 |
-| E5 + features | 0.1 | 14.786% | $0.00016158 | **3.120e-07** |
-| E5 + features | 1 | 14.212% | $0.00015446 | 3.153e-07 |
-| E5 + features | 10 | **13.294%** | **$0.00014232** | 3.363e-07 |
+| E5 + features | 0.01 | 14.858% | $0.00016266 | **3.117e-07** |
+| E5 + features | 0.1 | 14.770% | $0.00016149 | 3.118e-07 |
+| E5 + features | 1 | 14.210% | $0.00015438 | 3.148e-07 |
+| E5 + features | 10 | **13.293%** | **$0.00014230** | 3.360e-07 |
 | E5 + features | 100 | 14.120% | $0.00014891 | 3.851e-07 |
 | E5 + features | 1000 | 15.713% | $0.00016237 | 4.444e-07 |
 | E5 + features | 10000 | 23.836% | $0.00022698 | 5.559e-07 |
@@ -635,7 +647,76 @@ The notebook sets `reg_lambda = 1`; `gamma = 0` is the library default. The acti
 
 These settings are fixed: no XGBoost cross-validation or early stopping is performed. Under the default strategy, five-class classification adds one tree per class per round: 100 rounds produce 500 class-specific trees per score classifier. Each scalar cost model uses 100 trees. The reported final score classifiers observed all five classes.
 
-### 4. Training-frequency baseline
+### 4. LogNormal cost regression with smearing
+
+LogNormal fits normalized **log cost**, then restores positive dollar predictions. Both added families require finite, strictly positive recorded costs ($c_{im}>0$). Reuse the Ridge section's $\mu_m$, $r_{im}=c_{im}/\mu_m$, coefficients $\beta_m$, intercept $\beta_{0m}$ and penalty $\alpha$. Each cost family learns its own coefficients. The equations describe the full-training fit; within CV, restrict sums and cost means to the fitting rows.
+
+Let $\widehat\eta_m(x)$ be the fitted log-normalized cost. Its Ridge objective is
+
+$$
+\min_{\beta_{0m},\beta_m}
+\sum_{i=1}^{N}\left[\log r_{im}-\beta_{0m}-x_i^{\mathsf T}\beta_m\right]^2
++\alpha\|\beta_m\|_2^2,
+\qquad \widehat\eta_m(x)=\beta_{0m}+x^{\mathsf T}\beta_m.
+$$
+
+Fitting log cost reduces the influence of large dollar values, but exponentiation alone does not recover the mean dollar cost. Define $\widetilde c_{im}^{\mathrm{OOF}}$ as an **unsmeared dollar prediction** made without question $i$'s group. Let $S_m$ be the mean observed-to-predicted ratio. Smearing adjusts the exponentiated prediction:
+
+$$
+S_m=\frac1N\sum_{i=1}^{N}\frac{c_{im}}{\widetilde c_{im}^{\mathrm{OOF}}},
+\qquad \widehat c_m(x)=\mu_m S_m\exp\!\left(\widehat\eta_m(x)\right).
+$$
+
+Each outer CV fit estimates $S_m$ through **three grouped inner folds using only its fitting rows**. Inner models restore their own fitting cost means before entering the ratio. Final smearing uses three folds of the full training set. Calibration and validation outcomes do not enter this correction; one global factor need not remove bias for every question.
+
+### 5. Gamma cost regression with a log link
+
+Gamma regression models positive normalized costs directly. Its deviance responds to the observed-to-predicted ratio. For this separately fitted model, let $\widehat r_m(x)$ be the predicted normalized mean. For positive values $y$ (observed) and $u$ (predicted), define Gamma deviance $d_\Gamma(y,u)$:
+
+$$
+\widehat r_m(x)=\exp(\beta_{0m}+x^{\mathsf T}\beta_m),
+\qquad d_\Gamma(y,u)=2\left[\log\left(\frac{u}{y}\right)+\frac{y}{u}-1\right].
+$$
+
+Minimize the regularized loss, then restore dollars:
+
+$$
+\min_{\beta_{0m},\beta_m}
+\frac1{2N}\sum_{i=1}^{N}d_\Gamma\left(r_{im},\widehat r_m(x_i)\right)
++\frac{\alpha}{2}\|\beta_m\|_2^2,
+\qquad \widehat c_m(x)=\mu_m\widehat r_m(x).
+$$
+
+The log link makes predictions positive; Gamma needs no smearing. LogNormal uses `Ridge(solver="lsqr")`; Gamma uses `GammaRegressor`. Both use tolerance `1e-6`, at most 5,000 iterations and unpenalized intercepts. They export cost point predictions. Their loss scalings differ, so alpha magnitudes are not directly comparable across families.
+
+#### Training-only alpha selection for LogNormal and Gamma
+
+Use the same **three grouped training folds, seed 42**, with fold-local TF-IDF/scalers and fitting-only cost means. Each family/representation runs one search. Candidate grids are:
+
+- **LogNormal / TF-IDF:** 0.01, 0.1, 1, 10, 100, 1000, 10000.
+- **LogNormal / E5:** 0, 1e-6, 1e-5, 1e-4, 0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000.
+- **Gamma / both:** 1e-6, 1e-5, 1e-4, 0.001, 0.01, 0.1, 1.
+
+Let $\widehat c_{im}^{(\alpha,\mathrm{OOF})}$ be the dollar prediction for training question $i$ while its group is held out, including inner smearing for LogNormal. With $N$ training questions, select alpha by
+
+$$
+\mathrm{CVCostWAPE}(\alpha)=\frac1{11}\sum_{m=1}^{11}
+\frac{\sum_{i=1}^{N}|\widehat c_{im}^{(\alpha,\mathrm{OOF})}-c_{im}|}
+{\sum_{i=1}^{N}c_{im}}.
+$$
+
+Pool each LLM's three-fold predictions before computing its ratio, then average the 11 ratios. Choose the lowest unrounded value; exact ties favor larger alpha. **One alpha per family/representation is shared by its 11 separately fitted LLM heads.** Refit on all training rows, using the requested alpha-0 override for LogNormal E5. Calibration, validation and test labels do not select alpha.
+
+| Cost family | Features | CV selected alpha | Final-fit alpha | Training OOF Cost WAPE at CV selection |
+|---|---|---|---|---|
+| LogNormal | TF-IDF | 1 | 1 | 13.0008% |
+| LogNormal | E5 + features | 0.0001 | 0 | 12.6638% |
+| Gamma | TF-IDF | 0.0001 | 0.0001 | 13.1005% |
+| Gamma | E5 + features | 0.0001 | 0.0001 | 13.0613% |
+
+LogNormal E5 is nearly tied at alpha 0 and 1e-4: CV WAPE is 12.663942% and 12.663831%, respectively. **The CV winner remains 1e-4.** The requested final fit uses alpha 0 for all 11 E5 heads and for their training-only smearing fits. This explicit final-fit override leaves the CV selection unchanged. The manifests distinguish `cv_selected_alpha` from `fit_alpha`; the existing `selected_alpha` field retains the CV result. All original candidates and CV results remain in `lognormal_cv_summary.csv` and `gamma_cv_summary.csv`.
+
+### 6. Training-frequency baseline
 
 The baseline ignores question features. Define $p^{\mathrm{base}}_{mj}$ as LLM $m$'s class-$j$ frequency in training, and $\hat c_m^{\mathrm{base}}$ as its constant dollar-cost prediction. Reuse $\mu_m$, the mean training dollar cost defined above:
 
@@ -675,12 +756,12 @@ Implementation references: [TF-IDF weighting](https://scikit-learn.org/1.7/modul
 
 ## Predictor Results on Calibration Data
 
-The reported experiment used **21,900 training questions** and evaluated **3,648 calibration questions**. Its selected settings were:
+The reported experiment used **21,900 training questions** and evaluated **3,648 calibration questions**. Its fitted settings are below; LogNormal E5 uses the requested alpha-0 override while its CV winner remains 0.0001:
 
-| Features | Logistic C | Ridge alpha | kNN score k / cost k |
-|---|---|---|---|
-| TF-IDF | 1 | 10 | 80 / 5 |
-| E5 + features | 1 | 10 | 80 / 10 |
+| Features | Logistic C | Ridge alpha | kNN score k / cost k | LogNormal fit alpha | Gamma alpha |
+|---|---|---|---|---|---|
+| TF-IDF | 1 | 10 | 80 / 5 | 1 | 0.0001 |
+| E5 + features | 1 | 10 | 80 / 10 | 0 | 0.0001 |
 
 XGBoost used 100 boosting rounds. Calibration compares the selected predictors; the **3,649 validation predictions** support downstream routing-policy development. Neither split selects the training-CV hyperparameters. No probability calibrator was fitted and test was not evaluated. Bold values mark the best unrounded metric within each main-comparison table.
 
@@ -692,7 +773,7 @@ XGBoost used 100 boosting rounds. Calibration compares the selected predictors; 
 | L2 logistic | TF-IDF | 68.7% | **45.3%** | 0.6372 | **0.00%** |
 | L2 logistic | E5 + features | 69.0% | 45.0% | **0.6341** | **0.00%** |
 | kNN (train-CV selected) | TF-IDF | 67.8% | 43.6% | 0.7134 | 0.22% |
-| kNN (train-CV selected) | E5 + features | 68.6% | 44.9% | 0.6751 | 0.17% |
+| kNN (train-CV selected) | E5 + features | 68.6% | 44.9% | 0.6752 | 0.17% |
 | XGBoost | TF-IDF | **69.1%** | 44.8% | 0.6426 | **0.00%** |
 | XGBoost | E5 + features | 69.1% | 44.3% | 0.6549 | **0.00%** |
 
@@ -722,7 +803,7 @@ Both outputs are compared with the **original recorded calibration scores**. The
 | L2 logistic | TF-IDF | 0.15571 | **0.32245** |
 | L2 logistic | E5 + features | 0.15427 | 0.32957 |
 | kNN (train-CV selected) | TF-IDF | 0.15652 | 0.33046 |
-| kNN (train-CV selected) | E5 + features | 0.15511 | 0.33063 |
+| kNN (train-CV selected) | E5 + features | 0.15512 | 0.33063 |
 | XGBoost | TF-IDF | **0.15414** | 0.33337 |
 | XGBoost | E5 + features | 0.15598 | 0.33907 |
 
@@ -730,19 +811,36 @@ Among the six learned configurations, hard scores have lower MAE in **6/6**, whi
 
 ### 3. Dollar-cost prediction
 
-Cost errors average the 11 per-LLM metrics equally. Hard and expected score outputs share the same dollar-cost predictions.
+All five cost predictors use the same calibration questions and equal weighting across the 11 LLMs. **Ridge is the cost head paired with Logistic score classification.** LogNormal and Gamma add separate cost predictions; they do not change the score heads. Metrics are defined above; lower is better.
 
-| Method | Features | Cost MSE (USD squared) | Cost MAE (USD) | Cost WAPE |
+| Cost method | Features | Cost MSE (USD squared) | Cost MAE (USD) | Cost WAPE |
 |---|---|---|---|---|
-| Training frequency | Baseline | 1.873e-06 | $0.00058923 | 61.46% |
-| L2 logistic | TF-IDF | 4.211e-07 | $0.00016767 | 17.24% |
-| L2 logistic | E5 + features | 3.680e-07 | $0.00014567 | 13.49% |
-| kNN (train-CV selected) | TF-IDF | 5.764e-07 | $0.00021138 | 23.41% |
-| kNN (train-CV selected) | E5 + features | **2.227e-07** | **$0.00009879** | **10.42%** |
+| Training mean | Baseline | 1.873e-06 | $0.00058923 | 61.46% |
+| Ridge | TF-IDF | 4.211e-07 | $0.00016767 | 17.24% |
+| Ridge | E5 + features | 3.680e-07 | $0.00014571 | 13.49% |
+| kNN | TF-IDF | 5.764e-07 | $0.00021138 | 23.41% |
+| kNN | E5 + features | **2.227e-07** | **$0.00009879** | **10.42%** |
 | XGBoost | TF-IDF | 2.844e-07 | $0.00012104 | 12.65% |
 | XGBoost | E5 + features | 3.003e-07 | $0.00011780 | 12.18% |
+| LogNormal | TF-IDF | 3.829e-07 | $0.00012570 | 12.97% |
+| LogNormal | E5 + features | 5.236e-07 | $0.00012865 | 13.44% |
+| Gamma | TF-IDF | 3.899e-07 | $0.00012787 | 13.20% |
+| Gamma | E5 + features | 5.889e-07 | $0.00013386 | 14.23% |
 
-kNN + E5 + features has the lowest MAE ($0.00009879); kNN + E5 + features has the lowest WAPE (10.42%); kNN + E5 + features has the lowest MSE (2.227e-07 USD squared). Costs reflect the dataset's historical benchmark pricing.
+**LogNormal E5 before and after the requested refit:**
+
+| Final-fit alpha | Cost MSE (USD squared) | Cost MAE (USD) | Cost WAPE |
+|---|---|---|---|
+| 0.0001 (previous) | 5.243562e-07 | $0.000128666466 | 13.442423% |
+| 0 (current) | 5.236276e-07 | $0.000128653225 | 13.440900% |
+
+The calibration WAPE decrease is 0.001524 percentage points; both fits round to 13.44% in the main table.
+
+- **E5 + kNN is best on all three summary metrics.** Its WAPE is also lowest for each of the 11 LLMs individually in this run.
+- With TF-IDF, LogNormal and Gamma improve Ridge WAPE from 17.24% to 12.97% and 13.20%; XGBoost remains lower at 12.65%.
+- With E5, the alpha-0 LogNormal fit has WAPE 13.44% and MSE 5.236e-07; Ridge has 13.49% and 3.680e-07, respectively. Gamma WAPE is 14.23%. Assess both typical absolute errors and the stronger penalty on large errors.
+
+These are predictor diagnostics using historical benchmark prices. Actual routing savings at a chosen quality level require evaluating a routing policy with recorded scores and costs. The full comparison is in `calibration_cost_comparison_summary.csv`, with per-LLM rows in `calibration_cost_comparison_per_llm.csv`.
 
 ### 4. Training-only kNN neighbor-count selection
 
@@ -776,14 +874,14 @@ Select score k by the highest CV accuracy and cost k by the lowest CV Cost WAPE.
 |---|---|---|---|---|---|
 | 1 | 60.633% | 10.8776 | 0.29888 | 0.32355 | 13.504% |
 | 2 | 58.458% | 6.0764 | 0.22450 | 0.32276 | 11.815% |
-| 3 | 63.270% | 3.9502 | 0.19968 | 0.32307 | 11.160% |
-| 5 | 64.658% | 2.2353 | 0.18032 | 0.32371 | 10.697% |
+| 3 | 63.269% | 3.9503 | 0.19968 | 0.32307 | 11.160% |
+| 5 | 64.659% | 2.2353 | 0.18032 | 0.32371 | 10.697% |
 | 10 | 66.042% | 1.1365 | 0.16604 | 0.32525 | **10.351%** |
-| 20 | 67.223% | 0.7949 | 0.15969 | 0.32780 | 10.399% |
-| 40 | 67.790% | 0.7035 | 0.15716 | 0.33044 | 10.547% |
+| 20 | 67.224% | 0.7947 | 0.15969 | 0.32780 | 10.399% |
+| 40 | 67.789% | 0.7035 | 0.15716 | 0.33044 | 10.547% |
 | 60 | 67.891% | 0.6860 | 0.15675 | 0.33213 | 10.680% |
-| 80 | **67.920%** | 0.6793 | 0.15685 | 0.33345 | 10.856% |
-| 100 | 67.874% | 0.6744 | 0.15696 | 0.33429 | 11.018% |
+| 80 | **67.919%** | 0.6793 | 0.15685 | 0.33345 | 10.856% |
+| 100 | 67.875% | 0.6744 | 0.15696 | 0.33429 | 11.018% |
 
 Calibration evaluates the selected predictor pair above. No all-k calibration metric sweep is used here. Fix the base predictors before choosing routing cost weights, budgets or thresholds on validation, then evaluate the selected complete system on test. E5 includes auxiliary features absent from TF-IDF, so this comparison does not isolate the embedding alone.
 
@@ -796,7 +894,7 @@ A successful full run writes its complete result set to the fixed directory:
 2_Router_Training/experiment_outputs/score_classification_5class/full/
 ```
 
-The replacement and ownership checks are described in [Quick Start](#quick-start). Smoke runs use separate timestamped folders.
+The overwrite, archive-preservation and ownership checks are described in [Quick Start](#quick-start). Smoke runs use separate timestamped folders.
 
 With external data, the default output base is derived from that data location. Set `OUTPUT_BASE_OVERRIDE` to choose another base; full results are written to its `full/` child. Confirm the printed **Outputs** path.
 
@@ -810,19 +908,28 @@ With external data, the default output base is derived from that data location. 
 | `*_hard_score.pkl`, `*_expected_score.pkl`, `*_dollar_cost.pkl` | Question-by-LLM score and dollar-cost DataFrames. |
 | `calibration_classification_summary.csv` and `calibration_classification_per_llm.csv` | Classification/probability metrics for the selected main predictors, overall and per LLM. |
 | `calibration_numeric_summary.csv` and `calibration_numeric_per_llm.csv` | Score MSE/MAE and cost MSE/MAE/WAPE for hard and expected scores. |
-| `linear_cv_summary.csv`, `linear_cv_folds.csv` and `linear_cv_heads.csv` | Seven-C training CV, fold summaries and per-head NLL/accuracy/convergence records. Full mode fits 462 CV heads. |
+| `linear_cv_summary.csv`, `linear_cv_folds.csv` and `linear_cv_heads.csv` | Seven-C training CV, including NLL, accuracy, hard/expected MSE/MAE and convergence records. Full mode fits 462 CV heads. |
 | `linear_final_fit.csv` | Fit/convergence diagnostics for the 22 selected final Logistic score heads. |
 | `cost_ridge_cv/` | Seven-alpha training CV, including summary, fold/per-LLM errors, out-of-fold dollar predictions, training rows and the CV manifest. |
 | `knn_cv/` | Ten-k training CV summaries, fold/per-LLM records, the selected score/cost pair, training rows, manifest and selected out-of-fold predictions. |
-| `linear_models.joblib` and `xgb_models.joblib` | Fitted Logistic/Ridge heads and fitted XGBoost score/cost estimators for both representations. |
+| `linear_models.joblib` and `xgb_models.joblib` | Fitted Logistic/Ridge and XGBoost score/cost estimators for both representations. |
+| `lognormal_models.joblib`, `gamma_models.joblib` | Fitted cost heads, normalization means, LogNormal smearing factors and preprocessing metadata. |
+| `lognormal_predictions_manifest.csv`, `gamma_predictions_manifest.csv` | Four cost-only prediction prefixes per family, covering both inputs and both output splits. |
+| `lognormal_cv_*.csv` / `gamma_cv_*.csv`, `*_cv_oof_*.npz` | Cost-family CV summaries, folds, per-LLM errors, training rows and all candidate OOF dollar predictions. |
+| `lognormal_experiment_manifest.json`, `gamma_experiment_manifest.json` | Grids, CV-selected and fitted alpha, model order, data fingerprints and run/update provenance. LogNormal records `cv_selected_alpha` and `fit_alpha`; `selected_alpha` retains its original CV meaning. |
+| `lognormal_run_status.json`, `gamma_run_status.json` | Progress of each additional cost family. Global `run_status.json` completes after the final combined check. |
+| `calibration_cost_comparison_summary.csv`, `calibration_cost_comparison_per_llm.csv` | Common calibration comparison of five cost families and the training-mean baseline. |
+| `lognormal_calibration_*.csv`, `gamma_calibration_*.csv`, `*_residual_*.png` / `*_residual_length_*.csv` | Additional cost metrics and residual/length diagnostics. |
 | `train_rows.csv`, `calibration_rows.csv`, `validation_rows.csv` | Row identifiers preserving split order. |
 | `raw_score_value_counts.csv` and `raw_score_anchor_coverage.csv` | Training/calibration score-support counts and five-anchor coverage. |
 
-With the current grids, a complete run exports **208 prediction files**: four file types for 12 main bundles and 40 single-k bundles. Main kNN bundles combine the independently selected score and cost counts; each single-k bundle uses its displayed k for both targets. All-k predictions are exported without an all-k calibration ground-truth metric sweep.
+With the current grids, a complete run exports **216 prediction files**: 208 core files (four types for 12 main bundles and 40 single-k bundles), plus **eight LogNormal/Gamma dollar-cost files**. Main kNN bundles combine the selected score/cost counts; each single-k bundle uses one k for both. All-k predictions are exported without an all-k calibration metric sweep.
 
-The main manifests cover the six learned predictor/representation configurations. The training-frequency baseline appears in calibration metric tables; it is not a separate exported prediction bundle. Test results are reserved for the later complete routing evaluation.
+The main manifests cover six score/cost configurations; the two additional manifests identify their entries as `cost_only`. The training-frequency baseline appears in calibration metric tables; it is not a separate exported prediction bundle. Test results are reserved for the later complete routing evaluation.
 
-For routing-policy development, filter `predictions_manifest.csv` to `split == "validation"` and load that row's prefix. Preserve question, LLM and anchor order. Saved predictions support policy experiments without refitting the base predictors.
+For routing-policy development, filter the manifests to `split == "validation"`. Load a score bundle from `predictions_manifest.csv` and its default cost, or pair it with a LogNormal/Gamma cost frame. Preserve question indices, LLM columns and class order; select policy settings again when changing the cost predictor. Saved predictions support these experiments without retraining.
+
+LogNormal exports `pred_12_calibration_dollar_cost.pkl` through `pred_15_validation_dollar_cost.pkl`; Gamma uses `pred_16_calibration_dollar_cost.pkl` through `pred_19_validation_dollar_cost.pkl`. Consult their manifests for the exact input/split mapping.
 
 Model files require the matching Step 1 inputs for new-text inference: the TF-IDF vectorizer or E5 encoder, auxiliary-feature scalers and compatible packages. Rebuild the kNN index from the prepared training features and mapped score/recorded-cost labels; the index is not serialized as a fitted estimator. Keep these prepared inputs with the project.
 
