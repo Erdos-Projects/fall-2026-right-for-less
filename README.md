@@ -30,7 +30,7 @@ keeping accuracy within a prespecified tolerance of the strongest fixed model?**
 └── Key_Performance_Indicators.md
 ```
 
-Prepared data and fitted experiment outputs are not included in this checkout. The preparation notebooks generate the data files; the training notebook generates predictors, predictions and run metadata.
+Prepared data and fitted experiment outputs are not included in this repository. The preparation notebooks download the data files; the training notebook generates predictors, predictions and run metadata.
 
 ## Data and candidate models
 
@@ -69,7 +69,19 @@ Exact duplicate groups remain together in training cross-validation.
 
 See [Key performance indicators](Key_Performance_Indicators.md) for metric definitions. The [Exploratory Data Analysis notebook](Exploratory_Data_Analysis.ipynb) uses only prompts belonging to the saved training split. It examines task imbalance, fractional scores, historical cost distributions, prompt-length relationships, and duplicate prompts, including comparisons within tasks. It also compares the 11 models and calculates a hindsight cost-saving benchmark using known outcomes. These analyses provide context for feature and modeling choices.
 
-## Features and predictors
+
+## Results
+
+See [performance.md](4_Final_Test/performance.md) for the current test results, model-selection breakdown, cost-prediction diagnostics and assessment against the [Key performance indicators](Key_Performance_Indicators.md).
+
+## References
+
+- Hu et al. (2024), [RouterBench: A Benchmark for Multi-LLM Routing System](https://arxiv.org/abs/2403.12031).
+- [RouterBench dataset](https://huggingface.co/datasets/withmartian/routerbench).
+- [Multilingual E5-small model and usage](https://huggingface.co/intfloat/multilingual-e5-small).
+- [Predictor implementation and recorded results](2_Router_Training/TF-IDF_E5_Score_Classification_Router.ipynb).
+
+## Details about features, predictors, and routing policy
 
 ### Prompt representations
 
@@ -107,11 +119,8 @@ Class accuracy and negative log-likelihood (NLL) use mapped labels. Numerical sc
 | LogNormal | Uses an existing score head | Ridge on log cost, exponentiated with training-only smearing | Grouped CV selects alpha; E5 final fitting explicitly uses alpha 0 instead of its recorded CV winner 0.0001 |
 | Gamma | Uses an existing score head | Gamma regression with a log link | Grouped CV selects alpha by mean per-model WAPE |
 
-The LogNormal correction uses out-of-fold training residual ratios, with inner grouped folds during outer CV. Neither LogNormal nor Gamma currently exports predictive uncertainty intervals.
 
-The predictor baselines are per-model training class frequencies and training-mean costs. Comparisons use an equal-weight average across the 11 candidate models unless stated otherwise.
-
-## Routing policy
+### Routing policy
 
 For a prompt x, candidate m has predicted score ŝₘ(x) and predicted dollar cost ĉₘ(x). The implemented policy is:
 
@@ -119,11 +128,7 @@ For a prompt x, candidate m has predicted score ŝₘ(x) and predicted dollar c
 \pi_\lambda(x)=\arg\max_m\left[\hat{s}_m(x)-\lambda\hat{c}_m(x)\right],\qquad\lambda\ge0.
 ```
 
-At λ = 0, the policy selects the highest predicted score. Larger λ penalizes expensive models more strongly; λ is measured in score per dollar. Exact utility ties follow candidate-column order.
-
-`DecisionPolicy` evaluates individual λ values or a grid. Its threshold-selection method returns the cheapest **observed validation policy** whose mean recorded score reaches the chosen threshold, or `None` if none qualifies. Meeting this validation threshold does not guarantee the same quality on new prompts.
-
-The final notebook uses kNN expected-score predictions (k = 100) and saved XGBoost cost regressors with TF-IDF features, matching the policy notebook. It checks both predictions against the validation exports before evaluating the frozen policy at λ = 2.7142066911362983. TF-IDF column selection, numerical precision, neighbor selection and dollar-cost scaling match training.
+At λ = 0, the policy selects the highest predicted score. Larger λ penalizes expensive models more strongly; λ is measured in score per dollar. Exact utility ties follow candidate-column order. `DecisionPolicy` evaluates individual λ values or a grid. Its threshold-selection method returns the cheapest **observed validation policy** whose mean recorded score reaches the chosen threshold, or `None` if none qualifies. 
 
 ## Running the project
 
@@ -158,8 +163,6 @@ Open [the training notebook](2_Router_Training/TF-IDF_E5_Score_Classification_Ro
 2_Router_Training/experiment_outputs/score_classification_5class/full/
 ```
 
-A full rerun overwrites its owned output filenames; archive results you need to retain first. 
-
 | Output | Contents |
 |---|---|
 | `experiment_manifest.json` | Settings, model order, versions, selected hyperparameters and run metadata |
@@ -170,22 +173,9 @@ A full rerun overwrites its owned output filenames; archive results you need to 
 | `cost_ridge_cv/`, `knn_cv/`, `linear_cv_*.csv` | Training cross-validation records |
 | `lognormal_*`, `gamma_*` | Additional cost models, diagnostics, prediction manifests and provenance |
 
-The full workflow declares 216 prediction files: 208 core files and eight additional LogNormal/Gamma cost files. kNN is reconstructed from training features/outcomes rather than loaded as a saved fitted estimator.
 
 ### 4. Analyzing routing on validation and evaluating a frozen policy
 
 Run [the policy notebook](3_policy_evaluation/viz_notebook.ipynb) with its kernel working directory set to `3_policy_evaluation/`. Run [the final-evaluation notebook](4_Final_Test/Final_Test_kNN_E5_Frozen_Policy_KPIs_TieFix.ipynb). It loads the test outcomes and calculates the scorecard. Its exported files go under `4_Final_Test/experiment_outputs/`.
 
-
-
-## References
-
-- Hu et al. (2024), [RouterBench: A Benchmark for Multi-LLM Routing System](https://arxiv.org/abs/2403.12031).
-- [RouterBench dataset](https://huggingface.co/datasets/withmartian/routerbench).
-- [Multilingual E5-small model and usage](https://huggingface.co/intfloat/multilingual-e5-small).
-- [Predictor implementation and recorded results](2_Router_Training/TF-IDF_E5_Score_Classification_Router.ipynb).
-
-## Results
-
-See [performance.md](4_Final_Test/performance.md) for the current test results, model-selection breakdown, cost-prediction diagnostics and assessment against the [Key performance indicators](Key_Performance_Indicators.md).
 
