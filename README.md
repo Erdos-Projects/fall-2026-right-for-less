@@ -1,4 +1,4 @@
-# The Right answer, for Less
+# The Right answer, for Less (LLM routing)
 
 Different language models (LLMs) offer different tradeoffs between performance and cost, so choosing the right model for each problem can significantly improve efficiency. Given a problem set, instead of always using the LLM with the best performance with a high cost, we want to devise a router that will automatically recommend the least expensive LLM while still maintaining a high accuracy on each problem. We hope this router can benefit both Companies and individuals.
 
@@ -6,138 +6,186 @@ Our stakeholders will be any company or individual that needs to use AI to manag
 
 The primary question is: **Can prompt-specific routing reduce average cost while
 keeping accuracy within a prespecified tolerance of the strongest fixed model?**
-This is an empirical study of established routing methods. 
 
+## Repository structure
 
-# Start here
-
-## Python setup and data preparation
-Install python. 
-
-## Dataset and model pool
-
-Source: [RouterBench on Hugging Face](https://huggingface.co/datasets/withmartian/routerbench).
-
-The six open-weight candidates are:
-
-1. `WizardLM/WizardLM-13B-V1.2`
-2. `meta/code-llama-instruct-34b-chat`
-3. `meta/llama-2-70b-chat`
-4. `mistralai/mistral-7b-chat`
-5. `mistralai/mixtral-8x7b-chat`
-6. `zero-one-ai/Yi-34B-Chat`
-
-These identify historical benchmark configurations. The project makes no claim
-about current model versions, API prices, or currently available endpoints.
-
-## Experimental procedure
-
-Describe experiment
-
-### Mathematical model
-Our two main estimators will be
-```math
-\hat{p}_m(x_i) := \text{Estimator of the probability that the candidate model m solves the problem  } x_i \text{ correctly.}
-```
-and 
-```math
-\hat{c}_m(x) : = \text{Estimator of the expected cost of the candidate model m solving problem } x_i.
+```text
+.
+├── 1_data_preparation/
+│   ├── step1_TFIDF_complete.ipynb
+│   ├── step1_e5_complete.ipynb
+│   ├── loading_template.py
+│   ├── README-e5.md
+|   └── Exploratory_Data_Analysis.ipynb
+├── 2_Router_Training/
+│   ├── TF-IDF_E5_Score_Classification_Router.ipynb
+├── 3_policy_evaluation/
+│   ├── DecisionPolicy.py
+│   ├── loading_utils.py
+│   ├── viz_utils.py
+│   └── viz_notebook.ipynb
+├── 4_Final_Test/
+│   ├── Final_Test_kNN_E5_Frozen_Policy_KPIs_TieFix.ipynb
+│   └── performance.md
+└── Key_Performance_Indicators.md
 ```
 
-For $\hat p_m(x)$, we use logistic regression:
+Prepared data and fitted experiment outputs are not included in this checkout. The preparation notebooks generate the data files; the training notebook generates predictors, predictions and run metadata.
 
-```math
-\hat p_m(x)=\sigma(a_m+b_m^T\phi(x)),
+## Data and candidate models
+
+This project studies prompt-specific LLM routing using recorded outcomes from [RouterBench](https://huggingface.co/datasets/withmartian/routerbench). The preparation workflow uses `withmartian/routerbench`'s `routerbench_0shot.pkl`. For each prompt, it extracts the task label, recorded score and historical dollar cost for every candidate model.
+
+| Candidate model |
+|---|
+| `WizardLM/WizardLM-13B-V1.2` |
+| `claude-instant-v1` |
+| `claude-v1` |
+| `claude-v2` |
+| `gpt-3.5-turbo-1106` |
+| `gpt-4-1106-preview` |
+| `meta/code-llama-instruct-34b-chat` |
+| `meta/llama-2-70b-chat` |
+| `mistralai/mistral-7b-chat` |
+| `mistralai/mixtral-8x7b-chat` |
+| `zero-one-ai/Yi-34B-Chat` |
+
+These names identify historical benchmark configurations. The recorded costs do not establish current API prices or savings.
+
+### Splits
+
+Prompt lists are parsed into text. Exact duplicate texts receive the same group ID, and groups are shuffled before splitting. The approximate group proportions are 60% training, 10% calibration, 10% validation and 20% test.
+
+| Split | Recorded rows | Role in the current workflow |
+|---|---:|---|
+| Training | 21,900 | Fit predictors; select hyperparameters through grouped cross-validation |
+| Calibration | 3,648 | Compare predictor quality and inspect errors |
+| Validation | 3,649 | Select and analyze routing policies |
+| Test | 7,300 | Evaluate the recorded frozen policy |
+
+Exact duplicate groups remain together in training cross-validation. 
+
+### KPIs and Exploratory data analysis
+
+See [Key performance indicators](Key_Performance_Indicators.md) for metric definitions. The [Exploratory Data Analysis notebook](Exploratory_Data_Analysis.ipynb) uses only prompts belonging to the saved training split. It examines task imbalance, fractional scores, historical cost distributions, prompt-length relationships, and duplicate prompts, including comparisons within tasks. It also compares the 11 models and calculates a hindsight cost-saving benchmark using known outcomes. These analyses provide context for feature and modeling choices.
+
+## Features and predictors
+
+### Prompt representations
+
+| Representation | Features used by the training notebook |
+|---|---|
+| Character TF-IDF | Case-sensitive character 2–4-grams; `min_df=3`; at most 50,000 features. Preparation saves an extra length column, but training removes it. |
+| E5 + features | Frozen `intfloat/multilingual-e5-small` embeddings: 384 dimensions, plus character length, answer-choice count, numeric-value count and a code indicator, for 388 dimensions total. |
+
+E5 inputs use the `query: ` prefix. Long prompts are split into non-overlapping chunks of 480 content tokens; normalized chunk vectors are averaged with equal weight and normalized again. Length and count features use training-fitted standardization; the code indicator is binary. E5 is used as a frozen encoder, not fine-tuned.
+
+### Score prediction
+
+Each candidate LLM has a predicted distribution over five score anchors:
+
+```text
+0, 0.25, 0.50, 0.75, 1.00
 ```
 
-where $\sigma(t)=(1+e^{-t})^{-1}$ is the sigmoid function.
-We use the log-loss:
+Original grades are mapped to the nearest anchor for classification; exact midpoint ties use the lower anchor. The anchors cover 99.858% of the recorded training score entries. All examples remain in the experiment.
+
+The same distribution produces two numerical outputs:
+
+- **Expected score:** the probability-weighted average of the anchors.
+- **Hard score:** the anchor with the highest predicted probability.
+
+Class accuracy and negative log-likelihood (NLL) use mapped labels. Numerical score MSE and MAE use the original recorded grades. An expected grade is not automatically a calibrated probability of binary correctness.
+
+### Models and selection
+
+| Model | Score prediction | Cost prediction | Selection/settings |
+|---|---|---|---|
+| L2 logistic + Ridge | One regularized classifier per candidate | Ridge on mean-normalized costs, restored to dollars | Grouped training CV selects logistic C by NLL and Ridge alpha by mean per-model WAPE |
+| kNN | Uniform class frequencies among cosine neighbors | Mean historical cost among cosine neighbors | Grouped training CV selects score k by class accuracy and cost k separately by WAPE |
+| XGBoost | One boosted-tree classifier per candidate | One boosted-tree regressor per candidate | Fixed settings: 100 rounds, depth 3, learning rate 0.05 in full mode |
+| LogNormal | Uses an existing score head | Ridge on log cost, exponentiated with training-only smearing | Grouped CV selects alpha; E5 final fitting explicitly uses alpha 0 instead of its recorded CV winner 0.0001 |
+| Gamma | Uses an existing score head | Gamma regression with a log link | Grouped CV selects alpha by mean per-model WAPE |
+
+The LogNormal correction uses out-of-fold training residual ratios, with inner grouped folds during outer CV. Neither LogNormal nor Gamma currently exports predictive uncertainty intervals.
+
+The predictor baselines are per-model training class frequencies and training-mean costs. Comparisons use an equal-weight average across the 11 candidate models unless stated otherwise.
+
+## Routing policy
+
+For a prompt x, candidate m has predicted score ŝₘ(x) and predicted dollar cost ĉₘ(x). The implemented policy is:
 
 ```math
-\ell(y,p)=-y\log p-(1-y)\log(1-p).
+\pi_\lambda(x)=\arg\max_m\left[\hat{s}_m(x)-\lambda\hat{c}_m(x)\right],\qquad\lambda\ge0.
 ```
 
-The regularized empirical risk is
+At λ = 0, the policy selects the highest predicted score. Larger λ penalizes expensive models more strongly; λ is measured in score per dollar. Exact utility ties follow candidate-column order.
 
-```math
-R_m(A;a_m,b_m)
-=
-\frac{1}{N}\sum_{i=1}^{N}
-\ell\left(y_{im},\hat p_m(x_i)\right)
-+
-\frac{A}{2}\|b_m\|_2^2,
+`DecisionPolicy` evaluates individual λ values or a grid. Its threshold-selection method returns the cheapest **observed validation policy** whose mean recorded score reaches the chosen threshold, or `None` if none qualifies. Meeting this validation threshold does not guarantee the same quality on new prompts.
+
+The final notebook uses kNN expected-score predictions (k = 100) and saved XGBoost cost regressors with TF-IDF features, matching the policy notebook. It checks both predictions against the validation exports before evaluating the frozen policy at λ = 2.7142066911362983. TF-IDF column selection, numerical precision, neighbor selection and dollar-cost scaling match training.
+
+## Running the project
+
+### 1. Create an environment
+
+Follow the [E5 Python environment setup guide](1_data_preparation/README-e5.md) once. It creates `.venv-e5-clean` with Python 3.12 on macOS, installs the preparation/embedding dependencies, and verifies the imports. 
+
+### 2. Prepare the data
+
+Run these notebooks in order:
+
+1. [TF-IDF preparation](1_data_preparation/step1_TFIDF_complete.ipynb).
+2. [E5 preparation](1_data_preparation/step1_e5_complete.ipynb).
+
+Both preparation kernels must run from `1_data_preparation/`. Check their working directory with `Path.cwd()`. This produces the canonical layout expected by the policy/final-evaluation loaders:
+
+```text
+1_data_preparation/data/
+├── raw/routerbench_0shot.pkl
+└── processed/
+    ├── char_tfidf_50k/
+    └── multilingual_e5_small_chunk480/
 ```
 
-where $N$ is the number of training prompts.
+The first notebook downloads RouterBench if the raw file is missing. The second downloads the E5 encoder and generates features; its default setting recomputes embeddings. Initial preparation needs network access. Both workflows use CPU by default.
 
-For $c_m(x)$, the expected response cost, we use Gamma
-regression with a log link:
+### 3. Train and compare predictors
 
-```math
-\hat c_m(x)=e^{\alpha_m+\beta_m^T\phi(x)}.
+Open [the training notebook](2_Router_Training/TF-IDF_E5_Score_Classification_Router.ipynb). The notebook searches for prepared data automatically. Full outputs are written to:
+
+```text
+2_Router_Training/experiment_outputs/score_classification_5class/full/
 ```
 
-For strictly positive observed costs, the loss function is
+A full rerun overwrites its owned output filenames; archive results you need to retain first. 
 
-```math
-d_\Gamma(c,\mu)
-=
-\frac{c}{\mu}
--
-\log\left(\frac{c}{\mu}\right)
--1.
-```
+| Output | Contents |
+|---|---|
+| `experiment_manifest.json` | Settings, model order, versions, selected hyperparameters and run metadata |
+| `predictions_manifest.csv` | Main score/cost prediction bundles for calibration and validation |
+| `knn_predictions_manifest.csv` | Single-k prediction bundles for every tested neighbor count |
+| `*_probability.npy`, `*_expected_score.pkl`, `*_hard_score.pkl`, `*_dollar_cost.pkl` | Aligned prediction arrays/tables |
+| `calibration_*summary.csv`, `calibration_*per_llm.csv` | Aggregate and per-model evaluation metrics |
+| `cost_ridge_cv/`, `knn_cv/`, `linear_cv_*.csv` | Training cross-validation records |
+| `lognormal_*`, `gamma_*` | Additional cost models, diagnostics, prediction manifests and provenance |
 
-The regularized empirical risk is
+The full workflow declares 216 prediction files: 208 core files and eight additional LogNormal/Gamma cost files. kNN is reconstructed from training features/outcomes rather than loaded as a saved fitted estimator.
 
-```math
-Q_m(B;\alpha_m,\beta_m)
-=
-\frac{1}{N}\sum_{i=1}^{N}
-d_\Gamma\left(c_{im},\hat c_m(x_i)\right)
-+
-\frac{B}{2}\|\beta_m\|_2^2.
-```
+### 4. Analyzing routing on validation and evaluating a frozen policy
 
-Here, $A$ and $B$ are chosen by cross-validation within
-the training partition. For each fixed candidate value,
-we fit the regression coefficients on the training folds
-and evaluate prediction loss on the held-out fold.
-The intercepts are not penalized.
-
-For each prompt $x$, we assign every candidate model a score:
-
-```math
-S_m(x;\lambda)
-=
-\hat c_m(x)+\lambda\left[1-\hat p_m(x)\right].
-```
-
-The decision rule is
-
-```math
-\pi_\lambda(x)
-=
-\arg\min_{m\in\{1,\ldots,M\}}S_m(x;\lambda).
-```
-
-We choose $\lambda$ by constrained grid search on a
-held-out policy-validation set. Among the candidate values
-whose observed routing accuracy is at least $\tau$, we
-select the one with the lowest observed average cost.
-The accuracy target $\tau$ is fixed before training.
-
-If no candidate value meets the target, we report that
-no evaluated policy is feasible. The selected policy is
-then evaluated on an untouched test set; meeting the
-validation target does not guarantee the same accuracy
-on new prompts. See [KPI definitions](kpis.md) for KPIs. 
-
+Run [the policy notebook](3_policy_evaluation/viz_notebook.ipynb) with its kernel working directory set to `3_policy_evaluation/`. Run [the final-evaluation notebook](4_Final_Test/Final_Test_kNN_E5_Frozen_Policy_KPIs_TieFix.ipynb). It loads the test outcomes and calculates the scorecard. Its exported files go under `4_Final_Test/experiment_outputs/`.
 
 
 
 ## References
 
-- Hu et al. (2024), [RouterBench](https://arxiv.org/abs/2403.12031).
-- Shnitzer et al. (2023), [Large Language Model Routing with Benchmark Datasets](https://arxiv.org/abs/2309.15789). 
-- Dunn and Smyth (2018), [Generalized Linear Models With Examples in R, Chapter 11](https://link.springer.com/chapter/10.1007/978-1-4419-0118-7_11).
+- Hu et al. (2024), [RouterBench: A Benchmark for Multi-LLM Routing System](https://arxiv.org/abs/2403.12031).
+- [RouterBench dataset](https://huggingface.co/datasets/withmartian/routerbench).
+- [Multilingual E5-small model and usage](https://huggingface.co/intfloat/multilingual-e5-small).
+- [Predictor implementation and recorded results](2_Router_Training/TF-IDF_E5_Score_Classification_Router.ipynb).
+
+## Results
+
+See [performance.md](4_Final_Test/performance.md) for the current test results, model-selection breakdown, cost-prediction diagnostics and assessment against the [Key performance indicators](Key_Performance_Indicators.md).
+

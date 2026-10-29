@@ -1,115 +1,154 @@
-# E5 Python environment setup
+# Project Python environment setup
 
-Create a separate Python environment for E5 embedding work and verify that NumPy, PyTorch, and Sentence Transformers import successfully.
+Use one environment for data preparation, frozen E5 embeddings, exploratory analysis, router training and evaluation. This guide includes **Matplotlib, Seaborn and XGBoost** as well as the preparation dependencies.
 
-These instructions are for **macOS** and use **Python 3.12**. Run all commands in a terminal, such as VS Code's integrated terminal, rather than in a notebook cell.
+These instructions use **macOS and Python 3.12**. Run the shell commands in a terminal, such as VS Code's integrated terminal.
 
-## 1. Open your project folder
+## 1. Open the project folder
 
-Open the project in VS Code, then choose **Terminal → New Terminal**. Check that the terminal is in the project's main folder:
+Open your current `test-data-1` folder in VS Code, then choose **Terminal → New Terminal**. Check that the terminal is at the project root:
 
 ```bash
 pwd
-```
-
-For this project, the folder should be `fall-2026-right-for-less`. If necessary, use `cd` to navigate to your own copy of the project.
-
-Check that Python 3.12 is available:
-
-```bash
 python3.12 --version
 ```
 
-The output should start with `Python 3.12`. If the command is not found, install Python 3.12 for your Mac from [Python's official downloads](https://www.python.org/downloads/macos/), reopen the terminal, and check again.
+The directory should contain `1_data_preparation/`, `2_Router_Training/`, `3_policy_evaluation/` and `4_Final_Test/`. Its name may differ in another checkout. If Python 3.12 is missing, install it from [Python's macOS downloads](https://www.python.org/downloads/macos/) and reopen the terminal.
 
-## 2. Create and activate the environment
+## 2. Create or reuse the environment
+
+**For a new environment only:**
 
 ```bash
 python3.12 -m venv .venv-e5-clean
-source .venv-e5-clean/bin/activate
 ```
 
-The first command creates a folder named `.venv-e5-clean` inside the project. This folder holds the environment's Python executable and installed packages. Keep your notebooks and data outside it.
-
-Check which Python executable is active:
+**For both new and existing environments:**
 
 ```bash
+source .venv-e5-clean/bin/activate
 python -c "import sys; print(sys.executable)"
 ```
 
-The printed path should end with `.venv-e5-clean/bin/python`.
+The printed path should end with `.venv-e5-clean/bin/python`. If you already followed the earlier E5 guide, reuse that environment and continue below. Keep notebooks and data outside the environment folder.
 
-## 4. Install and test PyTorch
+## 3. Install the macOS OpenMP runtime
 
-With the environment activated, run:
+XGBoost's native library needs the OpenMP runtime. If the import reports `Library not loaded: @rpath/libomp.dylib`, installing the Python package alone does not resolve it. Install the runtime into that existing Miniforge installation:
+
+```bash
+"$HOME/miniforge3/bin/conda" install -n base -c conda-forge llvm-openmp
+```
+
+**Restart the notebook kernel after installation**, then retry `import xgboost`. Reinstalling the already-present XGBoost package with pip does not supply this missing native runtime.
+
+## 4. Install the project dependencies
+
+With `.venv-e5-clean` activated, run:
 
 ```bash
 python -m pip install --upgrade pip
-python -m pip install torch
-```
-
-Test PyTorch before installing the remaining dependencies:
-
-```bash
-python -X faulthandler -c "import torch; print(torch.__version__); print(torch.rand(2, 3))"
-```
-
-Successful output contains the installed PyTorch version and a tensor with two rows and three columns. The version and random numbers may differ between installations.
-
-At this stage, you may see a warning containing `Failed to initialize NumPy: No module named 'numpy'`. If the version and tensor still print successfully, continue: NumPy is installed in the next step.
-
-If the process crashes, stop and save the terminal output for troubleshooting. The `-X faulthandler` option can provide details about native-library crashes.
-
-## 5. Install the remaining dependencies
-
-```bash
-python -m pip install numpy sentence-transformers ipykernel pandas pyarrow scikit-learn
+python -m pip install numpy pandas scipy pyarrow joblib threadpoolctl \
+  "scikit-learn>=1.6" "xgboost>=2.0" \
+  torch sentence-transformers huggingface_hub \
+  matplotlib seaborn jinja2 ipython ipykernel
 python -m pip check
 ```
 
-These packages support numerical arrays, embedding models, notebook execution, and the project's data preparation work.
+The command installs missing dependencies and checks the stated minimum versions. Packages already satisfying the requirements can be reused. Sentence Transformers installs its required Transformers/tokenizer dependencies.
 
-The dependency check should report:
+| Packages | Project use |
+|---|---|
+| NumPy, pandas, SciPy, PyArrow | Arrays, tables, sparse features, statistics and data storage |
+| scikit-learn, XGBoost, joblib, threadpoolctl | Predictors, preprocessing, model persistence and thread control |
+| PyTorch, Sentence Transformers, Hugging Face Hub | Frozen E5 features and dataset/model downloads |
+| Matplotlib, Seaborn, Jinja2 | Plots and styled result tables |
+| IPython, ipykernel | Notebook display and execution in VS Code |
 
-```text
-No broken requirements found.
-```
+`pip check` should print `No broken requirements found.` This checks declared dependencies; the import checks below also test native-library loading.
 
-If it reports conflicts, save the output and resolve them before continuing. This check verifies declared package dependencies; it does not guarantee that every operation will run successfully.
+These are setup requirements, not a locked reproduction environment. Reproducing an existing saved run may require its recorded package versions.
 
-## 6. Verify the imports together
+## 5. Verify imports before running notebooks
+
+First check XGBoost:
 
 ```bash
-python -X faulthandler -c "import numpy; import torch; from sentence_transformers import SentenceTransformer; print('All imports OK'); print(torch.rand(2, 3).numpy())"
+python -c "import xgboost; print('XGBoost:', xgboost.__version__)"
 ```
 
-Successful output includes:
+Then check the project imports together:
 
-```text
-All imports OK
+```bash
+python -X faulthandler - <<'PY'
+import numpy as np
+import pandas
+import scipy
+import pyarrow
+import sklearn
+import xgboost
+import joblib
+import threadpoolctl
+import torch
+import huggingface_hub
+import matplotlib.pyplot as plt
+import seaborn
+import jinja2
+import IPython
+import ipykernel
+from sentence_transformers import SentenceTransformer
+
+print("All project imports OK")
+print("PyTorch to NumPy:", torch.rand(2, 3).numpy())
+fig, ax = plt.subplots()
+ax.plot([0, 1], [0, 1])
+fig.canvas.draw()
+plt.close(fig)
+print("Matplotlib rendering OK")
+PY
 ```
 
-followed by a two-by-three NumPy array of random numbers. This verifies the imports and conversion of a PyTorch tensor to a NumPy array. It does not download an E5 model or run embedding generation.
+Expected output includes `All project imports OK` and `Matplotlib rendering OK`. This checks imports, PyTorch/NumPy interoperability and basic plotting; it does not download E5 weights or train models.
+
+## 6. Select the notebook kernel
+
+In VS Code, open a notebook and select its kernel at the top right. Choose **Select Another Kernel → Python Environments**, then the environment whose executable ends with `.venv-e5-clean/bin/python`.
+
+**Restart the notebook kernel after installing packages or libomp**, then rerun imports. To confirm the notebook uses the intended environment, run this in a notebook cell:
+
+```python
+import sys
+print(sys.executable)
+```
+
+JupyterLab is optional if you prefer a browser interface instead of VS Code:
+
+```bash
+python -m pip install jupyterlab
+python -m jupyterlab
+```
 
 ## Use the environment again
 
-When opening a new terminal, navigate to the project's main folder and activate the environment:
+From the project root in a new terminal:
 
 ```bash
 source .venv-e5-clean/bin/activate
 ```
 
-To leave the environment:
+You do not need to recreate the environment or reinstall dependencies each time. To leave it:
 
 ```bash
 deactivate
 ```
 
-For a VS Code notebook, select the kernel at the top right, then choose **Select Another Kernel → Python Environments** and select the environment whose path contains `.venv-e5-clean/bin/python`. Restart an already-running notebook kernel after switching environments.
+Follow the root README for notebook execution order and working-directory requirements.
 
 ## References
 
-- [PyTorch installation and verification](https://pytorch.org/get-started/locally/)
+- [XGBoost installation](https://xgboost.readthedocs.io/en/stable/install.html)
+- [Matplotlib installation](https://matplotlib.org/stable/install/index.html)
+- [PyTorch installation](https://pytorch.org/get-started/locally/)
 - [Sentence Transformers installation](https://sbert.net/docs/installation.html)
 - [pip dependency checks](https://pip.pypa.io/en/stable/cli/pip_check/)
 - [VS Code notebook kernel selection](https://code.visualstudio.com/docs/datascience/jupyter-kernel-management)
