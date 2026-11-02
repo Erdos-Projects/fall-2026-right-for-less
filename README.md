@@ -25,7 +25,7 @@ keeping accuracy within a prespecified tolerance of the strongest fixed model?**
 │   ├── viz_utils.py
 │   └── viz_notebook.ipynb
 ├── 4_Final_Test/
-│   ├── Final_Test_kNN_E5_Frozen_Policy_KPIs_TieFix.ipynb
+│   ├── Final_Test_kNN_score_XGB_cost_TFIDF_Frozen_Policy_KPIs_TieFix.ipynb
 │   └── performance.md
 └── Key_Performance_Indicators.md
 ```
@@ -176,6 +176,6 @@ Open [the training notebook](2_Router_Training/TF-IDF_E5_Score_Classification_Ro
 
 ### 4. Analyzing routing on validation and evaluating a frozen policy
 
-Run [the policy notebook](3_policy_evaluation/viz_notebook.ipynb) with its kernel working directory set to `3_policy_evaluation/`. Run [the final-evaluation notebook](4_Final_Test/Final_Test_kNN_E5_Frozen_Policy_KPIs_TieFix.ipynb). It loads the test outcomes and calculates the scorecard. Its exported files go under `4_Final_Test/experiment_outputs/`.
+Run [the policy notebook](3_policy_evaluation/viz_notebook.ipynb) with its kernel working directory set to `3_policy_evaluation/`. Run [the final-evaluation notebook](4_Final_Test/Final_Test_kNN_score_XGB_cost_TFIDF_Frozen_Policy_KPIs_TieFix.ipynb). It loads the test outcomes and calculates the scorecard. Its exported files go under `4_Final_Test/experiment_outputs/`.
 
 
