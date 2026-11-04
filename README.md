@@ -11,26 +11,30 @@ keeping accuracy within a prespecified tolerance of the strongest fixed model?**
 
 ```text
 .
+├── 0_environment/
+│   ├── README_env.md
+│   ├── requirements.txt
+│   └── check.py
 ├── 1_data_preparation/
-│   ├── step1_TFIDF_complete.ipynb
-│   ├── step1_e5_complete.ipynb
-│   ├── loading_template.py
-│   ├── README-e5.md
-|   └── Exploratory_Data_Analysis.ipynb
-├── 2_Router_Training/
-│   ├── TF-IDF_E5_Score_Classification_Router.ipynb
+│   ├── TFIDF.ipynb
+│   └── Exploratory_Data_Analysis.ipynb
+├── 2a_Score_training_calibration/
+│   ├── score_model_xgb.py
+│   ├── score_training_xgb.ipynb
+│   ├── score_model_knn.py
+│   └── score_training_knn.ipynb
+├── 2b_cost_training_calibration/
+│   ├── cost_model_xgb.py
+│   └── cost_training_xgb.ipynb
 ├── 3_policy_evaluation/
-│   ├── DecisionPolicy.py
-│   ├── loading_utils.py
-│   ├── viz_utils.py
-│   └── viz_notebook.ipynb
+│   ├── policy.py
+│   ├── policy_eval_xgb_xgb.ipynb
+│   └── policy_eval_knn_xgb.ipynb
 ├── 4_Final_Test/
-│   ├── Final_Test_kNN_score_XGB_cost_TFIDF_Frozen_Policy_KPIs_TieFix.ipynb
-│   └── performance.md
-└── Key_Performance_Indicators.md
+│   └── testing_knn_xgb.ipynb
+├── Key_Performance_Indicators.md
+└── README.md
 ```
-
-Prepared data and fitted experiment outputs are not included in this repository. The preparation notebooks download the data files; the training notebook generates predictors, predictions and run metadata.
 
 ## Data and candidate models
 
@@ -52,130 +56,38 @@ This project studies prompt-specific LLM routing using recorded outcomes from [R
 
 These names identify historical benchmark configurations. The recorded costs do not establish current API prices or savings.
 
-### Splits
+## Routing policy
 
-Prompt lists are parsed into text. Exact duplicate texts receive the same group ID, and groups are shuffled before splitting. The approximate group proportions are 60% training, 10% calibration, 10% validation and 20% test.
+For each prompt $x$, predict each model’s expected score $\hat q_m(x)$ using kNN or XGBoost and expected cost $\hat c_m(x)$ in dollars using XGBoost. Route to
 
-| Split | Recorded rows | Role in the current workflow |
-|---|---:|---|
-| Training | 21,900 | Fit predictors; select hyperparameters through grouped cross-validation |
-| Calibration | 3,648 | Compare predictor quality and inspect errors |
-| Validation | 3,649 | Select and analyze routing policies |
-| Test | 7,300 | Evaluate the recorded frozen policy |
+$$
+\pi_\lambda(x)=\arg\max_m\left[\hat q_m(x)-\lambda\hat c_m(x)\right],
+$$
 
-Exact duplicate groups remain together in training cross-validation. 
+with deterministic tie-breaking. At $\lambda=0$, routing favors the highest predicted score; increasing $\lambda$ gives cost more weight.
 
-### KPIs and Exploratory data analysis
+Evaluate a nonnegative grid of $\lambda$ values on the policy-validation partition. Select the policy with the lowest observed average cost whose observed mean score meets GPT-4’s validation mean score, breaking cost ties by the smallest $\lambda$. If none qualifies, report this. Freeze the selected policy and predictors before evaluating the held-out test set.
 
-See [Key performance indicators](Key_Performance_Indicators.md) for metric definitions. The [Exploratory Data Analysis notebook](Exploratory_Data_Analysis.ipynb) uses only prompts belonging to the saved training split. It examines task imbalance, fractional scores, historical cost distributions, prompt-length relationships, and duplicate prompts, including comparisons within tasks. It also compares the 11 models and calculates a hindsight cost-saving benchmark using known outcomes. These analyses provide context for feature and modeling choices.
+## Performance statement
 
-
-## Results
-
-See [performance.md](4_Final_Test/performance.md) for the current test results, model-selection breakdown, cost-prediction diagnostics and assessment against the [Key performance indicators](Key_Performance_Indicators.md).
+On the held-out test set, the fixed kNN-score/XGBoost-cost router reduced average cost by 37.66% relative to always using GPT-4 (95% paired prompt-group bootstrap CI: 36.39%–38.91%). Its observed mean score was 0.780534, compared with GPT-4’s 0.779795. The estimated quality difference was +0.000740 (95% CI: −0.002973 to +0.004541).
 
 ## References
 
 - Hu et al. (2024), [RouterBench: A Benchmark for Multi-LLM Routing System](https://arxiv.org/abs/2403.12031).
 - [RouterBench dataset](https://huggingface.co/datasets/withmartian/routerbench).
 - [Multilingual E5-small model and usage](https://huggingface.co/intfloat/multilingual-e5-small).
-- [Predictor implementation and recorded results](2_Router_Training/TF-IDF_E5_Score_Classification_Router.ipynb).
 
-## Details about features, predictors, and routing policy
+## Pipeline
 
-### Prompt representations
-
-| Representation | Features used by the training notebook |
-|---|---|
-| Character TF-IDF | Case-sensitive character 2–4-grams; `min_df=3`; at most 50,000 features. Preparation saves an extra length column, but training removes it. |
-| E5 + features | Frozen `intfloat/multilingual-e5-small` embeddings: 384 dimensions, plus character length, answer-choice count, numeric-value count and a code indicator, for 388 dimensions total. |
-
-E5 inputs use the `query: ` prefix. Long prompts are split into non-overlapping chunks of 480 content tokens; normalized chunk vectors are averaged with equal weight and normalized again. Length and count features use training-fitted standardization; the code indicator is binary. E5 is used as a frozen encoder, not fine-tuned.
-
-### Score prediction
-
-Each candidate LLM has a predicted distribution over five score anchors:
-
-```text
-0, 0.25, 0.50, 0.75, 1.00
-```
-
-Original grades are mapped to the nearest anchor for classification; exact midpoint ties use the lower anchor. The anchors cover 99.858% of the recorded training score entries. All examples remain in the experiment.
-
-The same distribution produces two numerical outputs:
-
-- **Expected score:** the probability-weighted average of the anchors.
-- **Hard score:** the anchor with the highest predicted probability.
-
-Class accuracy and negative log-likelihood (NLL) use mapped labels. Numerical score MSE and MAE use the original recorded grades. An expected grade is not automatically a calibrated probability of binary correctness.
-
-### Models and selection
-
-| Model | Score prediction | Cost prediction | Selection/settings |
-|---|---|---|---|
-| L2 logistic + Ridge | One regularized classifier per candidate | Ridge on mean-normalized costs, restored to dollars | Grouped training CV selects logistic C by NLL and Ridge alpha by mean per-model WAPE |
-| kNN | Uniform class frequencies among cosine neighbors | Mean historical cost among cosine neighbors | Grouped training CV selects score k by class accuracy and cost k separately by WAPE |
-| XGBoost | One boosted-tree classifier per candidate | One boosted-tree regressor per candidate | Fixed settings: 100 rounds, depth 3, learning rate 0.05 in full mode |
-| LogNormal | Uses an existing score head | Ridge on log cost, exponentiated with training-only smearing | Grouped CV selects alpha; E5 final fitting explicitly uses alpha 0 instead of its recorded CV winner 0.0001 |
-| Gamma | Uses an existing score head | Gamma regression with a log link | Grouped CV selects alpha by mean per-model WAPE |
-
-
-### Routing policy
-
-For a prompt x, candidate m has predicted score ŝₘ(x) and predicted dollar cost ĉₘ(x). The implemented policy is:
-
-```math
-\pi_\lambda(x)=\arg\max_m\left[\hat{s}_m(x)-\lambda\hat{c}_m(x)\right],\qquad\lambda\ge0.
-```
-
-At λ = 0, the policy selects the highest predicted score. Larger λ penalizes expensive models more strongly; λ is measured in score per dollar. Exact utility ties follow candidate-column order. `DecisionPolicy` evaluates individual λ values or a grid. Its threshold-selection method returns the cheapest **observed validation policy** whose mean recorded score reaches the chosen threshold, or `None` if none qualifies. 
-
-## Running the project
-
-### 1. Create an environment
-
-Follow the [E5 Python environment setup guide](1_data_preparation/README-e5.md) once. It creates `.venv-e5-clean` with Python 3.12 on macOS, installs the preparation/embedding dependencies, and verifies the imports. 
-
-### 2. Prepare the data
-
-Run these notebooks in order:
-
-1. [TF-IDF preparation](1_data_preparation/step1_TFIDF_complete.ipynb).
-2. [E5 preparation](1_data_preparation/step1_e5_complete.ipynb).
-
-Both preparation kernels must run from `1_data_preparation/`. Check their working directory with `Path.cwd()`. This produces the canonical layout expected by the policy/final-evaluation loaders:
-
-```text
-1_data_preparation/data/
-├── raw/routerbench_0shot.pkl
-└── processed/
-    ├── char_tfidf_50k/
-    └── multilingual_e5_small_chunk480/
-```
-
-The first notebook downloads RouterBench if the raw file is missing. The second downloads the E5 encoder and generates features; its default setting recomputes embeddings. Initial preparation needs network access. Both workflows use CPU by default.
-
-### 3. Train and compare predictors
-
-Open [the training notebook](2_Router_Training/TF-IDF_E5_Score_Classification_Router.ipynb). The notebook searches for prepared data automatically. Full outputs are written to:
-
-```text
-2_Router_Training/experiment_outputs/score_classification_5class/full/
-```
-
-| Output | Contents |
-|---|---|
-| `experiment_manifest.json` | Settings, model order, versions, selected hyperparameters and run metadata |
-| `predictions_manifest.csv` | Main score/cost prediction bundles for calibration and validation |
-| `knn_predictions_manifest.csv` | Single-k prediction bundles for every tested neighbor count |
-| `*_probability.npy`, `*_expected_score.pkl`, `*_hard_score.pkl`, `*_dollar_cost.pkl` | Aligned prediction arrays/tables |
-| `calibration_*summary.csv`, `calibration_*per_llm.csv` | Aggregate and per-model evaluation metrics |
-| `cost_ridge_cv/`, `knn_cv/`, `linear_cv_*.csv` | Training cross-validation records |
-| `lognormal_*`, `gamma_*` | Additional cost models, diagnostics, prediction manifests and provenance |
-
-
-### 4. Analyzing routing on validation and evaluating a frozen policy
-
-Run [the policy notebook](3_policy_evaluation/viz_notebook.ipynb) with its kernel working directory set to `3_policy_evaluation/`. Run [the final-evaluation notebook](4_Final_Test/Final_Test_kNN_score_XGB_cost_TFIDF_Frozen_Policy_KPIs_TieFix.ipynb). It loads the test outcomes and calculates the scorecard. Its exported files go under `4_Final_Test/experiment_outputs/`.
-
-
+| Step | File | What it does |
+|---|---|---|
+| 1 | Follow `0_environment/README_env.md`, then run `python 0_environment/check.py`. | Creates the environment, installs dependencies, and checks the installation. |
+| 2 | `1_data_preparation/TFIDF.ipynb` | Loads the data, creates partitions with duplicate prompts kept together, and saves TF–IDF features and prompt length. |
+| 3 | `1_data_preparation/Exploratory_Data_Analysis.ipynb` | Explores the training data, scores, costs, and task distribution. |
+| 4 | `2a_Score_training_calibration/score_training_xgb.ipynb` | Trains and saves XGBoost score predictors and inspects calibration-partition diagnostics. |
+| 5 | `2b_cost_training_calibration/cost_training_xgb.ipynb` | Trains and saves XGBoost cost predictors using each LLM’s mean training cost for normalization, then inspects diagnostics. |
+| 6 | `2a_Score_training_calibration/score_training_knn.ipynb` | Selects the neighbor count through grouped cross-validation, saves the kNN score predictor, and compares its calibration results with XGBoost. |
+| 7 | `3_policy_evaluation/policy_eval_xgb_xgb.ipynb` | Evaluates XGBoost-score/XGBoost-cost routing policies on validation prompts and measures quality and savings. |
+| 8 | `3_policy_evaluation/policy_eval_knn_xgb.ipynb` | Evaluates kNN-score/XGBoost-cost policies, selects the cheapest evaluated policy meeting the validation quality target, and saves its configuration. |
+| 9 | `4_Final_Test/testing_knn_xgb.ipynb` | Evaluates the saved, fixed kNN-score/XGBoost-cost policy on held-out test prompts and reports quality, savings, and bootstrap confidence intervals. |
