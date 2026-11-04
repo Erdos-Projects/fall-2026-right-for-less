@@ -4,7 +4,6 @@ The project aims to reduce response cost while keeping quality acceptably close 
 
 This document defines the metrics and how to interpret the performance. 
 
-The current results and criterion-by-criterion assessment are in [Final-test performance](4_Final_Test/performance.md). 
 
 ## Evaluation scope
 
@@ -31,10 +30,10 @@ For the fixed reference model $b$, use $s_i^{b}=s_{ib}$ and $c_i^{b}=c_{ib}$. A 
 
 | ID | KPI | Definition | What counts as success? |
 |---|---|---|---|
-| P1 | Mean recorded score | $Q^{R}=\frac{1}{n}\sum_i s_i^{R}$; also report $Q^{b}$ | Higher is better, but there is no universal passing grade. Judge against the fixed reference and quality tolerance. |
+| P1 | Mean recorded score | $Q^{R}=\frac{1}{n}\sum_i s_i^{R}$; also report $Q^{b}$ | Higher is better. |
 | P2 | Score difference / quality retention | $\Delta Q=\frac{1}{n}\sum_i(s_i^{R}-s_i^{b})$ | Report the point estimate and paired interval. |
-| P3 | Mean historical response cost and savings | $C^{R}=\frac{1}{n}\sum_i c_i^{R}$; $S=1-C^{R}/C^{b}$ | Positive S means lower response cost. Stronger evidence requires its lower confidence bound to exceed zero, or a predeclared minimum savings target. Multiply S by 100 for percent. |
-| P4 | Joint cost–quality objective | Cost reduction **and** acceptable quality under P2 | Both conditions must hold. |
+| P3 | Mean historical response cost and savings | $C^{R}=\frac{1}{n}\sum_i c_i^{R}$; $S=1-C^{R}/C^{b}$ | Positive S means lower response cost. |
+| P4 | Joint cost–quality objective | Cost reduction and quality above threshold | Both conditions must hold. |
 
 
 ## Routing behavior
@@ -58,16 +57,10 @@ For numerical predictions:
 \mathrm{MAE}_{S,m}=\frac1n\sum_i|\hat s_{im}-s_{im}|.
 ```
 
-The score classifiers predict probabilities over anchors {0, 0.25, 0.5, 0.75, 1}. For mapped class $z_{im}$, report class accuracy, balanced accuracy and categorical NLL:
-
-```math
-\mathrm{NLL}_m=-\frac1n\sum_i\log\max(p_{im,z_{im}},10^{-12}).
-```
-
 
 ### D2. Dollar-cost prediction
 
-Use MSE, MAE, WAPE and Gamma loss:
+Use MSE, MAE, WAPE:
 
 ```math
 \mathrm{MSE}_{C,m}=\frac1n\sum_i(\hat c_{im}-c_{im})^2,
@@ -76,11 +69,9 @@ Use MSE, MAE, WAPE and Gamma loss:
 ```
 
 ```math
-\mathrm{WAPE}_{C,m}=\frac{\sum_i|\hat c_{im}-c_{im}|}{\sum_i c_{im}},
-\qquad
-\mathrm{GammaLoss}_m=\frac1n\sum_i\left[\frac{c_{im}}{\hat c_{im}}-\log\frac{c_{im}}{\hat c_{im}}-1\right].
+\mathrm{WAPE}_{C,m}=\frac{\sum_i|\hat c_{im}-c_{im}|}{\sum_i c_{im}}.
 ```
 
-MAE is in USD, MSE in USD²; WAPE and Gamma loss are dimensionless. WAPE is cost-weighted absolute relative error, not the average percentage error per prompt. Require positive actual/predicted costs for Gamma loss. 
+MAE is in USD, MSE in USD²; WAPE is dimensionless.
 
 
