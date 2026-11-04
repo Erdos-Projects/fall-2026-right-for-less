@@ -1,18 +1,27 @@
-# Python environments
-.venv/
-.venv-e5-clean/
-venv/
-env/
-
-# Data folders anywhere in the project
-data/
+# macOS files
+.DS_Store
+._*
 
 # Python caches
 __pycache__/
 *.py[cod]
 
-# Notebook checkpoints
+# Jupyter checkpoints
 .ipynb_checkpoints/
 
-# macOS files
-.DS_Store
+# Local virtual environments
+.venv/
+venv/
+
+# Downloaded data and generated feature matrices
+/1_data_preparation/data/
+
+# Large trained models and preprocessing objects
+/artifacts/**/*.joblib
+/artifacts/**/*.ubj
+/artifacts/**/*.npz
+/artifacts/**/*.pkl
+
+# Local editor settings
+.vscode/
+.idea/
