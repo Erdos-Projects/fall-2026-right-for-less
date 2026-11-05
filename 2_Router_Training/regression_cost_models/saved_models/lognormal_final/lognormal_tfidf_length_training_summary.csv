@@ -1,0 +1,12 @@
+model,lambda,best_iteration,best_subval_log_mse,iterations_recorded,stopped_early
+WizardLM/WizardLM-13B-V1.2,0.1,5,0.09766500367468953,10,True
+claude-instant-v1,0.1,8,0.16830848907990542,13,True
+claude-v1,0.1,5,0.15185926421252,10,True
+claude-v2,0.1,8,0.19507706190327687,13,True
+gpt-3.5-turbo-1106,0.1,5,0.10433844774613947,10,True
+gpt-4-1106-preview,0.1,8,0.23779817253785487,13,True
+meta/code-llama-instruct-34b-chat,0.1,5,0.07004289241213302,10,True
+meta/llama-2-70b-chat,0.1,5,0.09100901408105601,10,True
+mistralai/mistral-7b-chat,0.1,5,0.08062887523444834,10,True
+mistralai/mixtral-8x7b-chat,0.1,5,0.08414064105464125,10,True
+zero-one-ai/Yi-34B-Chat,0.1,5,0.10033698175329091,10,True
