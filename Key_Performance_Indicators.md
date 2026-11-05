@@ -13,7 +13,7 @@ This document defines the metrics and how to interpret the performance.
 For prompt $x_i$, let $s_{im}$ be candidate $m$'s recorded grade and $c_{im}$ its historical response cost. The router selects model $\pi_\lambda(x_i)$ using predicted scores and costs:
 
 ```math
-\pi_\lambda(x_i)=\operatorname*{arg\,max}_m
+\pi_\lambda(x_i)=\text{argmax}_m
 \left(\widehat{s}_{im}-\lambda\widehat{c}_{im}\right).
 ```
 
