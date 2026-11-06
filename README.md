@@ -76,7 +76,6 @@ On the held-out test set, the fixed kNN-score/XGBoost-cost router reduced averag
 
 - Hu et al. (2024), [RouterBench: A Benchmark for Multi-LLM Routing System](https://arxiv.org/abs/2403.12031).
 - [RouterBench dataset](https://huggingface.co/datasets/withmartian/routerbench).
-- [Multilingual E5-small model and usage](https://huggingface.co/intfloat/multilingual-e5-small).
 
 ## Pipeline
 
